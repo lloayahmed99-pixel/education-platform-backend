@@ -65,7 +65,21 @@ router.get('/students/:id', async (req, res) => {
       [req.params.id]
     );
     
-    return res.json({ ...student, enrollments: enrollmentsResult.rows, quizAttempts: quizAttemptsResult.rows });
+    const videoProgressResult = await query(`
+      SELECT vp.*, v.title as video_title, c.title as course_title 
+      FROM video_progress vp
+      JOIN videos v ON vp.video_id = v.id
+      JOIN courses c ON v.course_id = c.id
+      WHERE vp.student_id = $1
+      ORDER BY vp.last_watched_at DESC
+    `, [req.params.id]);
+    
+    return res.json({ 
+      ...student, 
+      enrollments: enrollmentsResult.rows, 
+      quizAttempts: quizAttemptsResult.rows,
+      videoProgress: videoProgressResult.rows 
+    });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch student' });
   }
