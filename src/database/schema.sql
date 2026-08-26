@@ -3,6 +3,8 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  phone TEXT,
+  parent_phone TEXT,
   profile_image TEXT DEFAULT NULL,
   role TEXT NOT NULL DEFAULT 'student' CHECK(role IN ('admin', 'moderator', 'student')),
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended')),

@@ -48,7 +48,7 @@ router.get('/students', async (req, res) => {
 router.get('/students/:id', async (req, res) => {
   try {
     const studentResult = await query(
-      "SELECT id, name, email, profile_image, status, points, created_at FROM users WHERE id = $1 AND role = 'student'",
+      "SELECT id, name, email, phone, parent_phone, profile_image, status, points, created_at FROM users WHERE id = $1 AND role = 'student'",
       [req.params.id]
     );
     const student = studentResult.rows[0];

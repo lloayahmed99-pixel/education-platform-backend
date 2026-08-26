@@ -20,19 +20,18 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
-router.post('/register', validateBody(registerSchema), async (req, res) => {
-  const { name, email, password } = req.body;
-  
+router.post('/register', async (req, res) => {
+  const { name, email, password, phone, parent_phone } = req.body;
+  if (!name || !email || !password) return res.status(400).json({ error: 'Missing required fields' });
+
   try {
-    const existingUser = await query('SELECT id FROM users WHERE email = $1', [email]);
-    if (existingUser.rows.length > 0) {
-      return res.status(400).json({ error: 'Email already exists' });
-    }
+    const existing = await query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existing.rows.length > 0) return res.status(400).json({ error: 'Email already exists' });
 
     const hash = bcrypt.hashSync(password, 10);
     const result = await query(
-      'INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id',
-      [name, email, hash, 'student']
+      "INSERT INTO users (name, email, password_hash, phone, parent_phone, role) VALUES ($1, $2, $3, $4, $5, 'student') RETURNING id, name, email, role, phone, parent_phone",
+      [name, email, hash, phone || null, parent_phone || null]
     );
       
     const userId = result.rows[0].id;
