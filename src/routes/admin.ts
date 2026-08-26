@@ -5,8 +5,12 @@ import { requireRole } from '../middleware/authorize';
 import { query } from '../database/db';
 import { AuthRequest } from '../types';
 
+import adminCoursesRoutes from './admin-courses';
+
 const router = Router();
 router.use(authenticate, requireRole('admin'));
+
+router.use('/courses', adminCoursesRoutes);
 
 // ========== STUDENTS ==========
 
