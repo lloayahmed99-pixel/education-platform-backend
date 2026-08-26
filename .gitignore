@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+data/platform.db
+data/platform.db-journal
+data/platform.db-wal
+data/platform.db-shm
