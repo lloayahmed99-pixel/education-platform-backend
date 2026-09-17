@@ -6,6 +6,7 @@ import { query } from '../database/db';
 import { authenticate } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { User, AuthRequest } from '../types';
+import { logActivity } from '../utils/logger';
 
 const router = Router();
 
@@ -21,7 +22,7 @@ const loginSchema = z.object({
 });
 
 router.post('/register', async (req, res) => {
-  const { name, email, password, phone, parent_phone } = req.body;
+  const { name, email, password, phone, parent_phone, grade } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: 'Missing required fields' });
 
   try {
@@ -30,8 +31,8 @@ router.post('/register', async (req, res) => {
 
     const hash = bcrypt.hashSync(password, 10);
     const result = await query(
-      "INSERT INTO users (name, email, password_hash, phone, parent_phone, role) VALUES ($1, $2, $3, $4, $5, 'student') RETURNING id, name, email, role, phone, parent_phone",
-      [name, email, hash, phone || null, parent_phone || null]
+      "INSERT INTO users (name, email, password_hash, phone, parent_phone, grade, role) VALUES ($1, $2, $3, $4, $5, $6, 'student') RETURNING id, name, email, role, phone, parent_phone, grade",
+      [name, email, hash, phone || null, parent_phone || null, grade || null]
     );
       
     const userId = result.rows[0].id;
@@ -61,6 +62,9 @@ router.post('/login', validateBody(loginSchema), async (req, res) => {
     if (user.status !== 'active') {
       return res.status(403).json({ error: 'Account is not active' });
     }
+
+    await query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
+    await logActivity(user.id, 'login', 'user', user.id);
 
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { query } from '../database/db';
 import { AuthRequest } from '../types';
+import { logActivity } from '../utils/logger';
 
 const router = Router();
 router.use(authenticate);
@@ -36,7 +37,7 @@ router.post('/:videoId', async (req: AuthRequest, res) => {
   const completionPercentage = duration > 0 ? (currentPosition / duration) * 100 : 0;
   
   try {
-    const existing = await query('SELECT id FROM video_progress WHERE student_id = $1 AND video_id = $2', [req.user!.id, req.params.videoId]);
+    const existing = await query('SELECT id, completed FROM video_progress WHERE student_id = $1 AND video_id = $2', [req.user!.id, req.params.videoId]);
     
     if (existing.rows.length > 0) {
       await query(`
@@ -49,6 +50,14 @@ router.post('/:videoId', async (req: AuthRequest, res) => {
         INSERT INTO video_progress (student_id, video_id, current_position, duration, completion_percentage, completed) 
         VALUES ($1, $2, $3, $4, $5, $6)
       `, [req.user!.id, req.params.videoId, currentPosition, duration, completionPercentage, completed ? 1 : 0]);
+      
+      if (!completed) {
+        await logActivity(req.user!.id, 'started_video', 'video', req.params.videoId);
+      }
+    }
+
+    if (completed && (!existing.rows.length || !existing.rows[0].completed)) {
+      await logActivity(req.user!.id, 'completed_video', 'video', req.params.videoId);
     }
     
     return res.json({ success: true });

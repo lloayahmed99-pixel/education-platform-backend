@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth';
 import { requireRole } from '../middleware/authorize';
 import { query } from '../database/db';
 import { AuthRequest } from '../types';
+import { logActivity } from '../utils/logger';
 
 const router = Router();
 
@@ -54,6 +55,8 @@ router.post('/:id/submit', authenticate, requireRole('student'), async (req: Aut
       'INSERT INTO quiz_attempts (student_id, quiz_id, score, passed, answers_json, completed_at) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)',
       [req.user!.id, quiz.id, score, passed, JSON.stringify(answers)]
     );
+
+    await logActivity(req.user!.id, 'submitted_quiz', 'quiz', quiz.id);
 
     return res.json({ score, passed, correctCount, totalQuestions });
   } catch (err) {

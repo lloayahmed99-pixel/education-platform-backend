@@ -12,27 +12,52 @@ router.use(authenticate, requireRole('admin'));
 
 router.use('/courses', adminCoursesRoutes);
 
+// ========== DASHBOARD ==========
+router.get('/dashboard/stats', async (req, res) => {
+  try {
+    const totalStudentsRes = await query("SELECT COUNT(*) as count FROM users WHERE role = 'student'");
+    const activeStudentsRes = await query("SELECT COUNT(*) as count FROM users WHERE role = 'student' AND last_login >= NOW() - INTERVAL '30 days'");
+    const newRegistrationsRes = await query("SELECT COUNT(*) as count FROM users WHERE role = 'student' AND created_at >= NOW() - INTERVAL '7 days'");
+    const learningNowRes = await query("SELECT COUNT(*) as count FROM users WHERE role = 'student' AND last_login >= NOW() - INTERVAL '1 day'");
+    const totalCoursesRes = await query("SELECT COUNT(*) as count FROM courses");
+
+    return res.json({
+      totalStudents: parseInt(totalStudentsRes.rows[0].count, 10),
+      activeStudents: parseInt(activeStudentsRes.rows[0].count, 10),
+      newRegistrations: parseInt(newRegistrationsRes.rows[0].count, 10),
+      studentsLearningNow: parseInt(learningNowRes.rows[0].count, 10),
+      totalCourses: parseInt(totalCoursesRes.rows[0].count, 10)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+});
+
 // ========== STUDENTS ==========
 
 router.get('/students', async (req, res) => {
-  const { page = 1, limit = 20, search = '', status = '' } = req.query;
+  const { page = 1, limit = 20, search = '', status = '', grade = '' } = req.query;
   const offset = (Number(page) - 1) * Number(limit);
   
   let where = "WHERE role = 'student'";
   const params: any[] = [];
   
   if (search) {
-    where += ' AND (name ILIKE $1 OR email ILIKE $1)';
     params.push(`%${search}%`);
+    where += ` AND (name ILIKE $${params.length} OR email ILIKE $${params.length} OR CAST(id AS TEXT) ILIKE $${params.length})`;
   }
   if (status) {
     params.push(status);
     where += ` AND status = $${params.length}`;
   }
+  if (grade) {
+    params.push(grade);
+    where += ` AND grade = $${params.length}`;
+  }
   
   try {
     const studentsResult = await query(
-      `SELECT id, name, email, profile_image, status, points, created_at FROM users ${where} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      `SELECT id, name, email, profile_image, status, points, grade, last_login, created_at FROM users ${where} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, Number(limit), offset]
     );
     
@@ -52,7 +77,7 @@ router.get('/students', async (req, res) => {
 router.get('/students/:id', async (req, res) => {
   try {
     const studentResult = await query(
-      "SELECT id, name, email, phone, parent_phone, profile_image, status, points, created_at FROM users WHERE id = $1 AND role = 'student'",
+      "SELECT id, name, email, phone, parent_phone, profile_image, status, points, grade, last_login, created_at FROM users WHERE id = $1 AND role = 'student'",
       [req.params.id]
     );
     const student = studentResult.rows[0];
@@ -89,8 +114,61 @@ router.get('/students/:id', async (req, res) => {
   }
 });
 
+router.get('/students/:id/activity', async (req, res) => {
+  try {
+    const logsResult = await query(
+      'SELECT * FROM activity_logs WHERE user_id = $1 ORDER BY created_at DESC',
+      [req.params.id]
+    );
+    return res.json(logsResult.rows);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch activity logs' });
+  }
+});
+
+router.get('/students/:id/courses', async (req, res) => {
+  try {
+    const coursesResult = await query(`
+      SELECT e.*, c.title as course_title, c.description, c.thumbnail 
+      FROM enrollments e
+      JOIN courses c ON e.course_id = c.id
+      WHERE e.student_id = $1
+      ORDER BY e.enrolled_at DESC
+    `, [req.params.id]);
+    
+    // We could fetch progress per course here as well
+    const courses = coursesResult.rows;
+    for (const course of courses) {
+      const progressRes = await query(
+        'SELECT * FROM video_progress WHERE student_id = $1 AND video_id IN (SELECT id FROM videos WHERE course_id = $2)',
+        [req.params.id, course.course_id]
+      );
+      course.videoProgress = progressRes.rows;
+    }
+    
+    return res.json(courses);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch student courses' });
+  }
+});
+
+router.get('/students/:id/exams', async (req, res) => {
+  try {
+    const examsResult = await query(`
+      SELECT qa.*, q.title as quiz_title
+      FROM quiz_attempts qa
+      JOIN quizzes q ON qa.quiz_id = q.id
+      WHERE qa.student_id = $1
+      ORDER BY qa.started_at DESC
+    `, [req.params.id]);
+    return res.json(examsResult.rows);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch student exams' });
+  }
+});
+
 router.post('/students', async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, grade } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: 'Missing required fields' });
   try {
     const existingResult = await query('SELECT id FROM users WHERE email = $1', [email]);
@@ -98,10 +176,10 @@ router.post('/students', async (req, res) => {
     
     const hash = bcrypt.hashSync(password, 10);
     const result = await query(
-      "INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, 'student') RETURNING id",
-      [name, email, hash]
+      "INSERT INTO users (name, email, password_hash, role, grade) VALUES ($1, $2, $3, 'student', $4) RETURNING id",
+      [name, email, hash, grade || null]
     );
-    return res.status(201).json({ id: result.rows[0].id, name, email, role: 'student' });
+    return res.status(201).json({ id: result.rows[0].id, name, email, role: 'student', grade });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to create student' });
   }

@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth';
 import { requirePermission, requireRole } from '../middleware/authorize';
 import { query } from '../database/db';
 import { AuthRequest } from '../types';
+import { logActivity } from '../utils/logger';
 
 const router = Router();
 
@@ -97,6 +98,8 @@ router.post('/:id/enroll', authenticate, requireRole('student'), async (req: Aut
     );
     
     await query('UPDATE courses SET students_count = students_count + 1 WHERE id = $1', [courseId]);
+    
+    await logActivity(studentId, 'enrolled_course', 'course', courseId);
     
     return res.status(201).json({ success: true });
   } catch (err) {
